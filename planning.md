@@ -95,3 +95,60 @@ In the League of Legends community, the difference between a rant, a hot take, a
 A post like: *"Jinx is broken — her win rate is the highest it's been all season."*
 
 This could be `hot_take` (no source, accusatory framing) or `analysis` (references a real stat). Decision rule: if the stat is vague, unsourced, or used as punctuation rather than as the basis of reasoning, label it `hot_take`. A genuine `analysis` post would specify the number, the patch context, and explain *why* the stat means what the poster claims.
+
+---
+
+## Milestone 2: Spec
+
+---
+
+## Data Collection Plan
+
+**Where:** Posts and top-level comments from r/leagueoflegends, focused on champion/meta discussion threads — patch-day megathreads, "is X broken?" posts, tier-list posts, and the daily/weekly discussion threads. Comments are valuable here because rants and hot takes show up more in replies than in standalone posts.
+
+**How many:** A balanced set of **50 examples per label × 4 labels = 200 total**. Balanced classes keep accuracy interpretable and give the fine-tuned model enough signal per class on a small dataset.
+
+**Collection method:** Manual browsing + copy into a CSV (`text`, `label`, `source_url`, `pre_labeled` columns). I'll pull from a spread of recent patches rather than a single thread, so the model doesn't overfit to one champion or one patch's vocabulary.
+
+**If a label is underrepresented after 200:** `analysis` is the label most at risk of falling short, since data-backed posts are rarer than venting. If any label lands under 50:
+1. **Targeted search** for that label specifically — e.g. for `analysis`, search threads with "win rate," "patch notes," "data," or link-heavy posts; for `meta_report`, search "tier list" and patch-rundown posts.
+2. If still short, **rebalance the target** down to the size of the smallest class (e.g. 40/label) rather than padding one class with weak or borderline examples — class balance matters more than hitting exactly 200.
+3. I will **not** synthetically generate real training examples; AI is only used for stress-testing definitions and pre-label suggestions I review (see AI Tool Plan).
+
+---
+
+## Evaluation Metrics
+
+**Primary: Macro-averaged F1.** Because the task has 4 classes and the boundary cases (`hot_take` vs `analysis`) are exactly where the model is most likely to fail, I need a metric that weights every class equally regardless of how common it is. Macro-F1 averages per-class F1, so a model that nails the easy `rant`/`meta_report` classes but collapses `analysis` and `hot_take` together will score poorly — which is the correct signal.
+
+**Secondary: Per-class precision and recall.** Accuracy alone hides *which* class is failing and *how*. Precision/recall per class tells me, for example, whether `analysis` is being under-predicted (low recall — the model rarely commits to it) or over-predicted (low precision — it labels loose hot takes as analysis). That directly informs whether my label definitions or my data need work.
+
+**Diagnostic: Confusion matrix.** This shows the *direction* of errors. My hypothesis is that the dominant confusion will be `hot_take ↔ analysis` and `rant ↔ hot_take`, mirroring the edge cases above. The confusion matrix lets me confirm or refute that and target failure analysis accordingly.
+
+**Why not accuracy alone:** With balanced classes accuracy isn't useless, but it can't distinguish a model that's uniformly decent from one that's excellent on 3 classes and broken on the 4th. For a tool meant to separate "real analysis" from "cope," failing one class quietly is a real failure, so per-class metrics are required.
+
+---
+
+## Definition of Success
+
+**Quantitative bar:** A **macro-F1 ≥ 0.75** on the held-out test set, with **no single class scoring below 0.65 F1.** The second clause matters: a high macro-average that hides one broken class would not be a useful community tool.
+
+**Relative bar:** The fine-tuned DistilBERT should **match or beat the Groq (llama-3.3-70b) baseline on macro-F1.** If a from-scratch fine-tune on 200 examples can't reach a large general-purpose LLM, that's a meaningful negative result worth reporting honestly.
+
+**"Good enough for deployment" reasoning:** For a real community tool that flags low-effort takes vs. evidence-backed posts, the costly error is mislabeling genuine `analysis` as `hot_take` (penalizing good contributors). So beyond the macro bar, I want **`analysis` precision ≥ 0.70** — when the tool says something is analysis, it should usually be right. These thresholds are specific enough that at the end I can objectively check each one against the evaluation output and declare pass/fail.
+
+---
+
+## AI Tool Plan
+
+**1. Label stress-testing (before annotating).**
+Before collecting examples, I'll give an LLM (Groq, llama-3.3-70b) my four label definitions and the edge-case decision rules, and ask it to generate 8–10 posts that deliberately sit on the `hot_take ↔ analysis` and `rant ↔ hot_take` boundaries. If I can't classify its outputs cleanly using my own rules, that's a signal my definitions are too loose — I'll tighten them *before* annotating 200 examples, not after. Outcome of this step will be noted in the AI usage write-up.
+
+**2. Annotation assistance (pre-labeling with review).**
+I will use **Groq (llama-3.3-70b) to pre-label** each example, then review every pre-labeled row myself and correct it — the LLM proposes, I decide. The final label is always my human judgment. For disclosure and integrity:
+- The CSV includes a **`pre_labeled` column** (`TRUE`/`FALSE`) marking every row that received an AI suggestion.
+- I'll also track **how often I overrode the AI's suggestion**, which doubles as a sanity check on my own label definitions (a high override rate on one class means that definition is ambiguous).
+- The AI usage section of the README will disclose the tool, the prompt, and the override rate.
+
+**3. Failure analysis (after evaluation).**
+After evaluation, I'll give an LLM the list of misclassified examples (text, true label, predicted label) and ask it to identify **patterns** in the errors — e.g. "the model labels any post containing a number as `analysis`," or "short emotional posts get split between `rant` and `hot_take`." I will then **verify each proposed pattern myself** by going back to the actual misclassified posts and confirming the pattern holds before writing it into my evaluation — the AI surfaces hypotheses, I confirm them against the data. I expect the patterns to cluster around the `hot_take ↔ analysis` boundary predicted by the confusion matrix.
