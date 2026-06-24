@@ -49,18 +49,6 @@ The League of Legends subreddit is one of the most active gaming communities onl
 
 ---
 
-### `meta_report`
-**Definition:** A neutral summary of the current state of the meta — tier lists, "what's strong right now," or patch rundowns — without a strong personal opinion or emotional charge.
-
-**Clear examples:**
-- *"Support tier list after patch 14.6: S tier — Thresh, Nautilus; A tier — Lulu, Karma; B tier — Soraka."*
-- *"Quick patch 14.7 breakdown: Jinx buffed (Q cd reduced), Zed nerfed (R cooldown up), Grasp of the Undying unchanged."*
-
-**Borderline example:**
-- *"Here's my personal tier list — I think Thresh is overrated and Lulu is slept on."* — has tier list structure but introduces personal opinion, which edges toward hot_take.
-
----
-
 ## Decision Rules for Edge Cases
 
 ### Hot_take vs. Analysis
@@ -75,12 +63,6 @@ The League of Legends subreddit is one of the most active gaming communities onl
 
 - If you could remove the frustration and still have a debatable opinion → `hot_take`
 - If removing the frustration leaves nothing → `rant`
-
-### Meta_report vs. Hot_take
-**The key question:** Is the post describing the meta, or arguing about it?
-
-- Tier lists with personal justifications or contrarian framing → `hot_take`
-- Tier lists presented as informational summaries → `meta_report`
 
 ---
 
@@ -98,6 +80,27 @@ This could be `hot_take` (no source, accusatory framing) or `analysis` (referenc
 
 ---
 
+## Hard Edge Cases Encountered During Annotation
+
+These are real posts from the dataset that genuinely gave me pause, with the call I made and the reasoning. Together they cover all three label boundaries.
+
+**1. `hot_take` vs `analysis` — the "int accounts" post.**
+> *"There is not any substantial number of int accounts in low elo. It'd be borderline impossible to even match with specific people in mid-low elo. Wintrading and alt accounts set to lose became a thing in high elo because of how effective they are, and the low pool of players to draw from."*
+
+This reads analytically — calm tone, structured reasoning about *why* wintrading concentrates in high elo — but it cites **no verifiable evidence** (no win rates, patch notes, or sources). **Decision: `hot_take`.** My rule is that `analysis` requires evidence that holds up the claim; reasoning alone, however measured, is still an asserted opinion. This case forced me to treat "analytical tone" and "actual evidence" as two separate things — tone doesn't earn the `analysis` label.
+
+**2. `rant` vs `hot_take` — "Vi is so fucking op."**
+> *"Vi is so fucking op that it makes me want to stop playing this game."*
+
+The venting ("so fucking op… makes me want to stop playing") screams `rant`, but underneath sits a debatable balance claim (Vi is overpowered). **Decision: `hot_take`.** Per the Rant-vs-Hot_take rule: if removing the frustration leaves a debatable opinion, it's a `hot_take`. Strip the emotion and "Vi is OP" remains — arguable — so `hot_take`. A pure `rant` leaves nothing arguable behind (e.g. "lost 6 in a row, this game is misery").
+
+**3. `rant` vs `analysis` — the ranged-top-laner essay.**
+> *"I am a top laner and tried to play both sides of the ranged top matchup. The problem isn't just how strong they are, it's how unfun and uninteractive it is for everyone… the popular ranged tops build tanky, bring exhaust, have cc or escape specifically to stop you from doing anything…"* (long post)
+
+The tone is clearly frustrated, which pulled toward `rant`, but the post is a **structured, multi-part argument** explaining *why* (lane dynamics, build choices, wave states, skill floor) and walks through both perspectives. **Decision: `analysis`.** Frustration is the framing, not the substance — the post makes and supports a claim, so emotion doesn't override it. This is the boundary my original decision rules didn't explicitly cover (`rant` vs `analysis`), and the resolution is the same principle as case 1: **judge by substance, not tone.**
+
+---
+
 ## Milestone 2: Spec
 
 ---
@@ -106,12 +109,12 @@ This could be `hot_take` (no source, accusatory framing) or `analysis` (referenc
 
 **Where:** Posts and top-level comments from r/leagueoflegends, focused on champion/meta discussion threads — patch-day megathreads, "is X broken?" posts, tier-list posts, and the daily/weekly discussion threads. Comments are valuable here because rants and hot takes show up more in replies than in standalone posts.
 
-**How many:** A balanced set of **50 examples per label × 4 labels = 200 total**. Balanced classes keep accuracy interpretable and give the fine-tuned model enough signal per class on a small dataset.
+**How many:** A target of roughly **65 examples per label × 3 labels ≈ 200 total**. Reasonably balanced classes keep accuracy interpretable and give the fine-tuned model enough signal per class on a small dataset.
 
 **Collection method:** Manual browsing + copy into a CSV (`text`, `label`, `source_url`, `pre_labeled` columns). I'll pull from a spread of recent patches rather than a single thread, so the model doesn't overfit to one champion or one patch's vocabulary.
 
 **If a label is underrepresented after 200:** `analysis` is the label most at risk of falling short, since data-backed posts are rarer than venting. If any label lands under 50:
-1. **Targeted search** for that label specifically — e.g. for `analysis`, search threads with "win rate," "patch notes," "data," or link-heavy posts; for `meta_report`, search "tier list" and patch-rundown posts.
+1. **Targeted search** for that label specifically — e.g. for `analysis`, search threads with "win rate," "patch notes," "data," or link-heavy posts; for `rant`, search post-game salt threads and "I'm done with this game" posts.
 2. If still short, **rebalance the target** down to the size of the smallest class (e.g. 40/label) rather than padding one class with weak or borderline examples — class balance matters more than hitting exactly 200.
 3. I will **not** synthetically generate real training examples; AI is only used for stress-testing definitions and pre-label suggestions I review (see AI Tool Plan).
 
@@ -119,13 +122,13 @@ This could be `hot_take` (no source, accusatory framing) or `analysis` (referenc
 
 ## Evaluation Metrics
 
-**Primary: Macro-averaged F1.** Because the task has 4 classes and the boundary cases (`hot_take` vs `analysis`) are exactly where the model is most likely to fail, I need a metric that weights every class equally regardless of how common it is. Macro-F1 averages per-class F1, so a model that nails the easy `rant`/`meta_report` classes but collapses `analysis` and `hot_take` together will score poorly — which is the correct signal.
+**Primary: Macro-averaged F1.** Because the task has 3 classes and the boundary cases (`hot_take` vs `analysis`, and `rant` vs `hot_take`) are exactly where the model is most likely to fail, I need a metric that weights every class equally regardless of how common it is. Macro-F1 averages per-class F1, so a model that nails the easier `rant` class but collapses `analysis` and `hot_take` together will score poorly — which is the correct signal.
 
 **Secondary: Per-class precision and recall.** Accuracy alone hides *which* class is failing and *how*. Precision/recall per class tells me, for example, whether `analysis` is being under-predicted (low recall — the model rarely commits to it) or over-predicted (low precision — it labels loose hot takes as analysis). That directly informs whether my label definitions or my data need work.
 
 **Diagnostic: Confusion matrix.** This shows the *direction* of errors. My hypothesis is that the dominant confusion will be `hot_take ↔ analysis` and `rant ↔ hot_take`, mirroring the edge cases above. The confusion matrix lets me confirm or refute that and target failure analysis accordingly.
 
-**Why not accuracy alone:** With balanced classes accuracy isn't useless, but it can't distinguish a model that's uniformly decent from one that's excellent on 3 classes and broken on the 4th. For a tool meant to separate "real analysis" from "cope," failing one class quietly is a real failure, so per-class metrics are required.
+**Why not accuracy alone:** With balanced classes accuracy isn't useless, but it can't distinguish a model that's uniformly decent from one that's excellent on 2 classes and broken on the 3rd. For a tool meant to separate "real analysis" from "cope," failing one class quietly is a real failure, so per-class metrics are required.
 
 ---
 
@@ -142,7 +145,7 @@ This could be `hot_take` (no source, accusatory framing) or `analysis` (referenc
 ## AI Tool Plan
 
 **1. Label stress-testing (before annotating).**
-Before collecting examples, I'll give an LLM (Groq, llama-3.3-70b) my four label definitions and the edge-case decision rules, and ask it to generate 8–10 posts that deliberately sit on the `hot_take ↔ analysis` and `rant ↔ hot_take` boundaries. If I can't classify its outputs cleanly using my own rules, that's a signal my definitions are too loose — I'll tighten them *before* annotating 200 examples, not after. Outcome of this step will be noted in the AI usage write-up.
+Before collecting examples, I'll give an LLM (Groq, llama-3.3-70b) my three label definitions and the edge-case decision rules, and ask it to generate 8–10 posts that deliberately sit on the `hot_take ↔ analysis` and `rant ↔ hot_take` boundaries. If I can't classify its outputs cleanly using my own rules, that's a signal my definitions are too loose — I'll tighten them *before* annotating 200 examples, not after. Outcome of this step will be noted in the AI usage write-up.
 
 **2. Annotation assistance (pre-labeling with review).**
 I will use **Groq (llama-3.3-70b) to pre-label** each example, then review every pre-labeled row myself and correct it — the LLM proposes, I decide. The final label is always my human judgment. For disclosure and integrity:
